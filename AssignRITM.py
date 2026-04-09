@@ -1,15 +1,16 @@
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError
 
+
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=False)
     page = browser.new_page()
-    page.goto("URL_HERE", wait_until="networkidle")
+    page.goto("SNOW_URL", wait_until="networkidle")
     page.wait_for_load_state("domcontentloaded")       
     
-    page.fill("input[type='email']","EMAIL_HERE")
+    page.fill("input[type='email']","EMAIL_ID")
     page.click("#idSIButton9")
-    page.fill("input[type='password']","PWD_HERE")
+    page.fill("input[type='password']","PW")
     page.click('#idSIButton9')
     
     frame = page.frame_locator("#gsft_main")    
@@ -26,31 +27,59 @@ with sync_playwright() as p:
     # Extra safety: ensure frame itself is loaded
     frame.wait_for_load_state()
     
-    page.wait_for_load_state("networkidle")     
+    page.wait_for_load_state("networkidle")  
     result = frame.evaluate("""
     () => {
     function parseNum(t) {
-        return parseInt(t.replace(/,/g,''), 10);
+        return parseInt(t.replace(/,/g, ''), 10);
     }    
     for (const row of document.querySelectorAll("tr")) {
         const caption = row.querySelector("td.pivot_caption.pivot_left");
-        if (!caption) continue;    
+        if (!caption) continue;
         if (caption.textContent.trim() !== "(empty)") continue;    
-        // OPEN column = first pivot_cell with a link
-        const openCell = row.querySelector("td.pivot_cell a[onclick*='generateDataPointClickUrl']");
-        if (!openCell) continue;    
-        const count = parseNum(openCell.textContent.trim());
+        // OPEN column = FIRST pivot_cell (index-based)
+        const cells = row.querySelectorAll("td.pivot_cell");
+        if (cells.length === 0) continue;    
+        const openCell = cells[0]; // FIRST value = OPEN
+        const count = parseNum(openCell.textContent.trim());    
         if (count > 0) {
-        openCell.click();
+        // only click if OPEN has a link (usually it won't)
+        const link = openCell.querySelector("a");
+        if (link) link.click();
         return { status: "CLICKED", count };
-        }
+        }    
+        return { status: "NO_EMPTY_OPEN_RITM", count };
     }    
-    return { status: "NO_EMPTY_OPEN_RITM" };
+    return { status: "ROW_NOT_FOUND" };
     }
     """)
+    
+    # result = frame.evaluate("""
+    # () => {
+    # function parseNum(t) {
+    #     return parseInt(t.replace(/,/g,''), 10);
+    # }    
+    # for (const row of document.querySelectorAll("tr")) {
+    #     const caption = row.querySelector("td.pivot_caption.pivot_left");
+    #     if (!caption) continue;    
+    #     if (caption.textContent.trim() !== "(empty)") continue;    
+    #     // OPEN column = first pivot_cell with a link
+    #     const openCell = row.querySelector("td.pivot_cell a[onclick*='generateDataPointClickUrl']");
+    #     if (!openCell) continue;    
+    #     const count = parseNum(openCell.textContent.trim());
+    #     if (count > 0) {
+    #     openCell.click();
+    #     return { status: "CLICKED", count };
+    #     }
+    # }    
+    # return { status: "NO_EMPTY_OPEN_RITM" };
+    # }
+    # """)
            
     if result["status"] == "NO_EMPTY_OPEN_RITM":
-        print("No empty & open RITMs found")
+        print("No Open RITMs found to Assign")
+        print("Execution Stopped")
+        raise SystemExit
     else:
         print(f"Total empty & open RITMs: {result['count']}")
     
@@ -72,7 +101,7 @@ with sync_playwright() as p:
     print(f"Total RITMs on page: {total_ritms}")
     
     VALID_PORTFOLIOS = [
-    "PORTFOLIOS_HERE"
+    PORTFOLIO_NAMES
     ]    
 
     initial_total_ritms = total_ritms
@@ -117,12 +146,14 @@ with sync_playwright() as p:
             )            
             assign_to_me.wait_for(state="visible", timeout=10000)
             assign_to_me.click()                        
+            page.wait_for_timeout(10000)
            
-            print("RITM Assigned to NAME matched → moving to next RITM") 
+            print("RITM Assigned to Santhosh matched → moving to next RITM") 
             
             # RESET index to FIRST RITM
-            current_index = 0
-            ritm_links = frame.locator("a.linked.formlink")            
+            current_index = 0            
+            ritm_links = frame.locator("a.linked.formlink")                        
+
             if counter == 0:
                 break
             counter -=1
@@ -134,11 +165,13 @@ with sync_playwright() as p:
             page.evaluate("window.history.back()")
             frame = page.frame(name="gsft_main")  
             frame.locator("a.linked.formlink").first.wait_for(timeout=15000) 
+            ritm_links = frame.locator("a.linked.formlink")           
+            
             if counter == 0:
                 break
             counter -=1
             Open_RITM +=1
             current_index += 1            
-            ritm_links = frame.locator("a.linked.formlink")
+            
 
     print(f"\nAssignment completed Sucessfully. \n Total Initial Open RITM {initial_total_ritms} \n Assigned RITM count {Assigned_RITMs} \n Remaining Open RITM count {Open_RITM}")
