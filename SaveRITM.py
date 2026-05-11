@@ -4,12 +4,12 @@ import sys
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=False)
     page = browser.new_page()
-    page.goto("SNOW_URL", wait_until="networkidle")
+    page.goto("URL", wait_until="networkidle")
     page.wait_for_load_state("domcontentloaded")       
     
-    page.fill("input[type='email']","EMAIL ID")
+    page.fill("input[type='email']","email id")
     page.click("#idSIButton9")
-    page.fill("input[type='password']","PW")
+    page.fill("input[type='password']","pw")
     page.click('#idSIButton9')
     
     frame = page.frame_locator("#gsft_main")
@@ -106,8 +106,8 @@ with sync_playwright() as p:
             save_btn.click(force=True)   # fallback if bounding_box None        
         # wait for the ServiceNow success banner
         try:
-            frame.locator("div.outputmsg_text").wait_for(state="attached", timeout=60000)
-            frame.locator("div.outputmsg_text").wait_for(state="visible", timeout=60000)            
+            frame.locator("div.outputmsg_text").wait_for(state="attached", timeout=120000)
+            frame.locator("div.outputmsg_text").wait_for(state="visible", timeout=120000)            
         except:
             # retry mouse click once more (some race conditions)
             save_btn.hover()
@@ -116,9 +116,9 @@ with sync_playwright() as p:
                 page.mouse.click(box["x"] + box["width"]/2, box["y"] + box["height"]/2)        
             # last-resort: trigger same internal function the button calls
             frame.evaluate("gsftSubmit(document.querySelector('#sysverb_insert_and_stay'))")        
-            # final wait for message                 
-            frame.locator("div.outputmsg_text").wait_for(state="attached", timeout=60000)
-            frame.locator("div.outputmsg_text").wait_for(state="visible", timeout=60000)
+            # final wait for message                             
+            frame.locator("div.outputmsg_text").wait_for(state="attached", timeout=120000)
+            frame.locator("div.outputmsg_text").wait_for(state="visible", timeout=120000)
     
         # ---------------------------
         # WAIT FOR SAVE RELOAD

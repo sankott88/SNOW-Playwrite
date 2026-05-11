@@ -1,34 +1,39 @@
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError
-
+from apm_validator import validate_apm_id
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=False)
     page = browser.new_page()
-    page.goto("SNOW_URL", wait_until="networkidle")
-    page.wait_for_load_state("domcontentloaded")       
-    
-    page.fill("input[type='email']","EMAIL_ID")
+    helper_context = browser.new_context()
+    page.goto(
+        "URL",
+        wait_until="commit",
+    )
+    page.wait_for_load_state("domcontentloaded")
+
+    page.fill("input[type='email']", "Email")
     page.click("#idSIButton9")
-    page.fill("input[type='password']","PW")
-    page.click('#idSIButton9')
-    
-    frame = page.frame_locator("#gsft_main")    
+    page.fill("input[type='password']", "PW")
+    page.click("#idSIButton9")
+
+    frame = page.frame_locator("#gsft_main")
     frame.locator("a[aria-label*='Cookie Complance | Daily Operations']").click()
 
-    page.wait_for_selector("iframe#gsft_main", timeout=60000)    
-    
+    page.wait_for_selector("iframe#gsft_main", timeout=60000)
+
     # Wait for page navigation/network
     page.wait_for_load_state("networkidle")
-    
+
     # Switch to ServiceNow main frame
     frame = page.frame(name="gsft_main")
-    
+
     # Extra safety: ensure frame itself is loaded
     frame.wait_for_load_state()
-    
-    page.wait_for_load_state("networkidle")  
-    result = frame.evaluate("""
+
+    page.wait_for_load_state("networkidle")
+    result = frame.evaluate(
+        """
     () => {
     function parseNum(t) {
         return parseInt(t.replace(/,/g, ''), 10);
@@ -52,40 +57,19 @@ with sync_playwright() as p:
     }    
     return { status: "ROW_NOT_FOUND" };
     }
-    """)
-    
-    # result = frame.evaluate("""
-    # () => {
-    # function parseNum(t) {
-    #     return parseInt(t.replace(/,/g,''), 10);
-    # }    
-    # for (const row of document.querySelectorAll("tr")) {
-    #     const caption = row.querySelector("td.pivot_caption.pivot_left");
-    #     if (!caption) continue;    
-    #     if (caption.textContent.trim() !== "(empty)") continue;    
-    #     // OPEN column = first pivot_cell with a link
-    #     const openCell = row.querySelector("td.pivot_cell a[onclick*='generateDataPointClickUrl']");
-    #     if (!openCell) continue;    
-    #     const count = parseNum(openCell.textContent.trim());
-    #     if (count > 0) {
-    #     openCell.click();
-    #     return { status: "CLICKED", count };
-    #     }
-    # }    
-    # return { status: "NO_EMPTY_OPEN_RITM" };
-    # }
-    # """)
-           
+    """
+    )
+
     if result["status"] == "NO_EMPTY_OPEN_RITM":
         print("No Open RITMs found to Assign")
         print("Execution Stopped")
         raise SystemExit
     else:
         print(f"Total empty & open RITMs: {result['count']}")
-    
+
     # Close OneTrust cookie banner if it appears
     try:
-        page.locator("#onetrust-accept-btn-handler").click(timeout=5000)        
+        page.locator("#onetrust-accept-btn-handler").click(timeout=5000)
     except:
         pass
 
@@ -95,83 +79,112 @@ with sync_playwright() as p:
     except:
         pass
 
-    frame = page.frame(name="gsft_main") 
+    frame = page.frame(name="gsft_main")
     ritm_links = frame.locator("a.linked.formlink")
-    total_ritms = ritm_links.count()        
+    total_ritms = ritm_links.count()
     print(f"Total RITMs on page: {total_ritms}")
-    
+
     VALID_PORTFOLIOS = [
-    PORTFOLIO_NAMES
-    ]    
+        “Portfolios”,
+    ]
 
     initial_total_ritms = total_ritms
-    Assigned_RITMs =0
-    Open_RITM =0
+    Assigned_RITMs = 0
+    Open_RITM = 0
     current_index = 0
     counter = total_ritms
- 
-    while current_index < total_ritms:    
+    sno = 0
+
+    while sno < total_ritms:
         ritm = ritm_links.nth(current_index)
-        ritm_text = ritm.inner_text()    
-        print(f"\n Clicking RITM [{current_index + 1}]: {ritm_text}")
-        ritm.click()    
+        ritm_text = ritm.inner_text()
+        sno += 1
+        print(f"\n Clicking RITM [{sno}]: {ritm_text}")
+        ritm.click()
         # Wait for RITM form to load
-        frame.locator("span.tab_caption_text >> text=Variables").wait_for(timeout=15000)    
+        frame.locator("span.tab_caption_text >> text=Variables").wait_for(timeout=15000)
+
+        # --- READ APM ID ---
+        apm_value = (
+            frame.locator(
+                "//label[.//span[contains(normalize-space(),'APM Asset Tag')]]"
+            )
+            .locator(
+                "xpath=ancestor::div[contains(@class,'sc_variable_editor')]//select/option[@selected]"
+            )
+            .text_content()
+        )
+        print(f" APM value: {apm_value}")
+
         # --- READ PORTFOLIO ---
-        portfolio_value = frame.locator(
-            "//label[.//span[normalize-space()='Portfolio']]"
-        ).locator(
-            "xpath=ancestor::div[contains(@class,'sc_variable_editor')]//input[starts-with(@id,'display_hidden.')]"
-        ).input_value()        
-        print(f" Portfolio value: {portfolio_value}")    
+        portfolio_value = (
+            frame.locator("//label[.//span[normalize-space()='Portfolio']]")
+            .locator(
+                "xpath=ancestor::div[contains(@class,'sc_variable_editor')]//input[starts-with(@id,'display_hidden.')]"
+            )
+            .input_value()
+        )
+        print(f" Portfolio value: {portfolio_value}")
+
         portfolio_matched = portfolio_value in VALID_PORTFOLIOS
+
+        # CHECK THE CONSULTING BUSINESS GROUP
+        if portfolio_value == "Consulting Services":
+            result = validate_apm_id(helper_context, apm_value)
+            print(result)
+            portfolio_matched = True if result == "Yes" else False
+
         if portfolio_matched:
-            print("Portfolio matched → assigning")                                            
-            
-            # --- BACK (reliable) ---            
-            page.evaluate("window.history.back()") 
+            print("Portfolio matched → assigning")
+
+            # --- BACK (reliable) ---
+            page.evaluate("window.history.back()")
             frame.locator("a.linked.formlink").first.wait_for(timeout=15000)
+            # frame.wait_for_selector("a.linked.formlink", timeout=15000)
 
             # Right-click first RITM
             # RIGHT-CLICK SAME RITM
             ritm = frame.locator("a.linked.formlink").nth(current_index)
-            ritm.click(button="right")       
-            
+            ritm.click(button="right")
+
             # Scope to the VISIBLE context menu only
             context_menu = frame.locator("div.context_menu:visible")
-            
+
             # Click ONLY "Assign to me"
             assign_to_me = context_menu.locator(
                 "div.context_item", has_text="Assign to me"
-            )            
+            )
             assign_to_me.wait_for(state="visible", timeout=10000)
-            assign_to_me.click()                        
+            assign_to_me.click()
             page.wait_for_timeout(10000)
-           
-            print("RITM Assigned to Santhosh matched → moving to next RITM") 
-            
+
+            print("RITM Assigned to Santhosh matched → moving to next RITM")
+
             # RESET index to FIRST RITM
-            current_index = 0            
-            ritm_links = frame.locator("a.linked.formlink")                        
+
+            ritm_links = frame.locator("a.linked.formlink")
 
             if counter == 0:
                 break
-            counter -=1
-            Assigned_RITMs +=1
+            counter -= 1
+            Assigned_RITMs += 1
+            current_index = current_index
+
             continue
-    
-        else:            
-            print("Portfolio NOT matched → moving to next RITM") 
+
+        else:
+            print("Portfolio NOT matched → moving to next RITM")
             page.evaluate("window.history.back()")
-            frame = page.frame(name="gsft_main")  
-            frame.locator("a.linked.formlink").first.wait_for(timeout=15000) 
-            ritm_links = frame.locator("a.linked.formlink")           
-            
+            frame = page.frame(name="gsft_main")
+            frame.locator("a.linked.formlink").first.wait_for(timeout=15000)
+            ritm_links = frame.locator("a.linked.formlink")
+
             if counter == 0:
                 break
-            counter -=1
-            Open_RITM +=1
-            current_index += 1            
-            
+            counter -= 1
+            Open_RITM += 1
+            current_index += 1
 
-    print(f"\nAssignment completed Sucessfully. \n Total Initial Open RITM {initial_total_ritms} \n Assigned RITM count {Assigned_RITMs} \n Remaining Open RITM count {Open_RITM}")
+    print(
+        f"\nAssignment completed Sucessfully. \n Total Initial Open RITM {initial_total_ritms} \n Assigned RITM count {Assigned_RITMs} \n Remaining Open RITM count {Open_RITM}"
+    )
