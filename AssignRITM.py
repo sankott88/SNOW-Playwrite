@@ -7,12 +7,12 @@ with sync_playwright() as p:
     page = browser.new_page()
     helper_context = browser.new_context()
     page.goto(
-        "URL",
+        "SERVICENOW_URL",
         wait_until="commit",
     )
     page.wait_for_load_state("domcontentloaded")
 
-    page.fill("input[type='email']", "Email")
+    page.fill("input[type='email']", "EMAIL")
     page.click("#idSIButton9")
     page.fill("input[type='password']", "PW")
     page.click("#idSIButton9")
@@ -32,8 +32,7 @@ with sync_playwright() as p:
     frame.wait_for_load_state()
 
     page.wait_for_load_state("networkidle")
-    result = frame.evaluate(
-        """
+    result = frame.evaluate("""
     () => {
     function parseNum(t) {
         return parseInt(t.replace(/,/g, ''), 10);
@@ -57,8 +56,7 @@ with sync_playwright() as p:
     }    
     return { status: "ROW_NOT_FOUND" };
     }
-    """
-    )
+    """)
 
     if result["status"] == "NO_EMPTY_OPEN_RITM":
         print("No Open RITMs found to Assign")
@@ -81,11 +79,12 @@ with sync_playwright() as p:
 
     frame = page.frame(name="gsft_main")
     ritm_links = frame.locator("a.linked.formlink")
-    total_ritms = ritm_links.count()
-    print(f"Total RITMs on page: {total_ritms}")
+    # total_ritms = ritm_links.count()
+    total_ritms = result["count"]
+    print(f"Total RITMs: {total_ritms}")
 
     VALID_PORTFOLIOS = [
-        “Portfolios”,
+        "Portfolios"
     ]
 
     initial_total_ritms = total_ritms
@@ -114,7 +113,17 @@ with sync_playwright() as p:
             )
             .text_content()
         )
-        print(f" APM value: {apm_value}")
+        print(f" APM ID: {apm_value}")
+
+        # --- READ Application Name ---
+        application_name = (
+            frame.locator("//label[.//span[normalize-space()='Application Name']]")
+            .locator(
+                "xpath=ancestor::div[contains(@class,'sc_variable_editor')]//input[starts-with(@id,'display_hidden.')]"
+            )
+            .input_value()
+        )
+        print(f" Application Name : {application_name}")
 
         # --- READ PORTFOLIO ---
         portfolio_value = (
@@ -140,7 +149,6 @@ with sync_playwright() as p:
             # --- BACK (reliable) ---
             page.evaluate("window.history.back()")
             frame.locator("a.linked.formlink").first.wait_for(timeout=15000)
-            # frame.wait_for_selector("a.linked.formlink", timeout=15000)
 
             # Right-click first RITM
             # RIGHT-CLICK SAME RITM
@@ -184,6 +192,23 @@ with sync_playwright() as p:
             counter -= 1
             Open_RITM += 1
             current_index += 1
+
+            # Move to next page after 20 records
+            if current_index >= ritm_links.count():
+                next_btn = frame.locator("button[name='vcr_next']:visible")
+                if next_btn.is_enabled():
+                    next_btn.click()
+
+                    page.wait_for_load_state("networkidle")
+                    frame = page.frame(name="gsft_main")
+
+                    frame.locator("a.linked.formlink").first.wait_for(timeout=15000)
+
+                    ritm_links = frame.locator("a.linked.formlink")
+
+                    current_index = 0  # Start from first row of next page
+                else:
+                    break
 
     print(
         f"\nAssignment completed Sucessfully. \n Total Initial Open RITM {initial_total_ritms} \n Assigned RITM count {Assigned_RITMs} \n Remaining Open RITM count {Open_RITM}"
